@@ -21,7 +21,6 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   @override
   void initState() {
     super.initState();
-    // Если переданы начальные данные (режим редактирования)
     _titleController.text = widget.initialTitle ?? '';
     _contentController.text = widget.initialContent ?? '';
   }
@@ -37,19 +36,25 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     
-    if (title.isEmpty) {
-      // Показать ошибку если заголовок пустой
+    if (title.isEmpty && content.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Введите заголовок заметки')),
       );
       return;
     }
     
-    // TODO: Сохранить заметку в базу данных
-    print('Сохранение заметки: $title');
+    // Если оба поля пустые - обычный выход
+    if (title.isEmpty && content.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
     
-    // Вернуться на предыдущий экран
-    Navigator.of(context).pop();
+    // Возврат данных на предыдущий экран
+    Navigator.of(context).pop({
+      'title': title,
+      'content': content,
+      'date': _getCurrentDate(),
+    });
   }
 
   @override
@@ -117,8 +122,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                   ),
                 ),
                 style: TextStyle(fontSize: 16),
-                maxLines: null, // Многострочное поле
-                expands: true, // Занимает все доступное пространство
+                maxLines: null,
+                expands: true,
                 textAlignVertical: TextAlignVertical.top,
               ),
             ),
@@ -141,6 +146,6 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   
   String _getCurrentDate() {
     final now = DateTime.now();
-    return '${now.day}.${now.month}.${now.year} ${now.hour}:${now.minute.toString().padLeft(2, '0')}';
+    return '${now.day}.${now.month}.${now.year}';
   }
 }

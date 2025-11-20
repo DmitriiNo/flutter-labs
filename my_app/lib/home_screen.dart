@@ -1,26 +1,117 @@
 import 'package:flutter/material.dart';
 import 'note_edit_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  void _openNoteEditor(BuildContext context) {
-    Navigator.of(context).push(
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  // Список заметок
+  List<Map<String, String>> notes = [];
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, String>> _filteredNotes = [];
+  bool _isSearching = false;
+
+  void _openNoteEditor(BuildContext context) async {
+    // Получение результата из редактора
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => NoteEditScreen(), // Новая заметка
+        builder: (context) => NoteEditScreen(),
       ),
     );
+
+    // Если возврат с данными - добавление заметки
+    if (result != null && result is Map) {
+      setState(() {
+        notes.add({
+          'title': result['title'] ?? 'Без названия',
+          'content': result['content'] ?? '',
+          'preview': _getPreview(result['content'] ?? ''),
+          'date': result['date'] ?? _getCurrentDate(),
+        });
+        // Если активно окно поиска - обновление результатов
+        if (_isSearching) {
+          _performSearch();
+        }
+      });
+    }
   }
 
-  void _openNoteForEditing(BuildContext context, String title, String content) {
-    Navigator.of(context).push(
+  void _openNoteForEditing(BuildContext context, int index) async {
+    final note = _isSearching ? _filteredNotes[index] : notes[index];
+    final originalIndex = notes.indexOf(note);
+    
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => NoteEditScreen(
-          initialTitle: title,
-          initialContent: content,
-        ), // Редактирование существующей
+          initialTitle: note['title'],
+          initialContent: note['content'],
+        ),
       ),
     );
+
+    // Обновление заметки если возврат с данными
+    if (result != null && result is Map) {
+      setState(() {
+        notes[originalIndex] = {
+          'title': result['title'] ?? 'Без названия',
+          'content': result['content'] ?? '',
+          'preview': _getPreview(result['content'] ?? ''),
+          'date': result['date'] ?? _getCurrentDate(),
+        };
+        // Если активно окно поиска - обновление результатов
+        if (_isSearching) {
+          _performSearch();
+        }
+      });
+    }
+  }
+
+  // Функция поиска
+  void _performSearch() {
+    final query = _searchController.text.trim();
+    
+    if (query.isEmpty) {
+      setState(() {
+        _isSearching = false;
+        _filteredNotes = [];
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _filteredNotes = notes.where((note) {
+        final title = note['title']?.toLowerCase() ?? '';
+        final content = note['content']?.toLowerCase() ?? '';
+        final searchQuery = query.toLowerCase();
+        return title.contains(searchQuery) || content.contains(searchQuery);
+      }).toList();
+    });
+  }
+
+  // Очистка поиска
+  void _clearSearch() {
+    setState(() {
+      _searchController.clear();
+      _isSearching = false;
+      _filteredNotes = [];
+    });
+  }
+
+  // Создание превью (первые 50 символов)
+  String _getPreview(String content) {
+    if (content.isEmpty) return 'Нет содержимого';
+    if (content.length <= 50) return content;
+    return '${content.substring(0, 50)}...';
+  }
+
+  String _getCurrentDate() {
+    final now = DateTime.now();
+    return '${now.day}.${now.month}.${now.year}';
   }
 
   @override
@@ -35,51 +126,80 @@ class HomeScreen extends StatelessWidget {
           // Поисковая строка
           Padding(
             padding: EdgeInsets.all(16.0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Поиск',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.0),
+            child: Row(
+              children: [
+                // Поле ввода
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Поиск заметок...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10.0),
+                      ),
+                    ),
+                    onSubmitted: (_) {
+                      _performSearch();
+                    },
+                  ),
                 ),
-              ),
+                SizedBox(width: 8),
+                // Кнопка поиска
+                IconButton(
+                  icon: Icon(Icons.search),
+                  onPressed: _performSearch,
+                  tooltip: 'Найти заметки',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                // Кнопка очистки
+                if (_isSearching)
+                  IconButton(
+                    icon: Icon(Icons.clear),
+                    onPressed: _clearSearch,
+                    tooltip: 'Очистить поиск',
+                  ),
+              ],
             ),
           ),
           
-          // Список заметок
-          Expanded(
-            child: ListView(
-              children: [
-                // Заметка 1
-                _buildNoteItem(
-                  context: context,
-                  title: 'Тренировки',
-                  preview: 'Понедельник: грудь...',
-                  date: '29.10.2025',
-                ),
-                
-                // Заметка 2
-                _buildNoteItem(
-                  context: context,
-                  title: 'Список покупок',
-                  preview: 'Молоко, хлеб, яйца...',
-                  date: '28.10.2025',
-                ),
-                
-                // Заметка 3
-                _buildNoteItem(
-                  context: context,
-                  title: 'Планы на неделю',
-                  preview: 'Понедельник: встреча...',
-                  date: '27.10.2025',
-                ),
-              ],
+          // Статус поиска
+          if (_isSearching)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Row(
+                children: [
+                  Text(
+                    'Найдено заметок: ${_filteredNotes.length}',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                  Spacer(),
+                  TextButton(
+                    onPressed: _clearSearch,
+                    child: Text('Показать все'),
+                  ),
+                ],
+              ),
             ),
+          
+          // Список заметок или сообщение о пустоте
+          Expanded(
+            child: _isSearching 
+                ? (_filteredNotes.isEmpty 
+                    ? _buildEmptyState(true)
+                    : _buildNotesList(_filteredNotes))
+                : (notes.isEmpty
+                    ? _buildEmptyState(false)
+                    : _buildNotesList(notes)),
           ),
         ],
       ),
       
-      // Кнопка добавления заметки
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           _openNoteEditor(context);
@@ -91,11 +211,66 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildEmptyState(bool isSearching) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isSearching ? Icons.search_off : Icons.note_add_outlined,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 16),
+          Text(
+            isSearching 
+                ? 'Заметки не найдены'
+                : 'У вас пока нет заметок',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            isSearching
+                ? 'Попробуйте изменить поисковый запрос'
+                : 'Нажмите + чтобы создать первую заметку',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[500],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotesList(List<Map<String, String>> notesList) {
+    return ListView.builder(
+      itemCount: notesList.length,
+      itemBuilder: (context, index) {
+        final note = notesList[index];
+        return _buildNoteItem(
+          context: context,
+          title: note['title']!,
+          preview: note['preview']!,
+          date: note['date']!,
+          index: index,
+          isSearching: _isSearching,
+        );
+      },
+    );
+  }
+
   Widget _buildNoteItem({
     required BuildContext context,
     required String title,
     required String preview,
     required String date,
+    required int index,
+    required bool isSearching,
   }) {
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
@@ -117,23 +292,25 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         onTap: () {
-          _openNoteForEditing(context, title, preview);
+          _openNoteForEditing(context, index);
         },
         onLongPress: () {
-          _showDeleteDialog(context);
+          _showDeleteDialog(context, index, isSearching);
         },
       ),
     );
   }
 
-  // Диалоговое окно удаления
-  void _showDeleteDialog(BuildContext context) {
+  void _showDeleteDialog(BuildContext context, int index, bool isSearching) {
+    final note = isSearching ? _filteredNotes[index] : notes[index];
+    final originalIndex = notes.indexOf(note);
+    
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Удалить заметку?'),
-          content: Text('Вы точно хотите удалить выбранную заметку?'),
+          content: Text('Вы точно хотите удалить "${note['title']}"?'),
           actions: [
             TextButton(
               onPressed: () {
@@ -143,7 +320,13 @@ class HomeScreen extends StatelessWidget {
             ),
             TextButton(
               onPressed: () {
-                // TODO: Реализовать удаление заметки
+                setState(() {
+                  notes.removeAt(originalIndex);
+                  // Если активно окно поиска - обновление результатов
+                  if (isSearching) {
+                    _performSearch();
+                  }
+                });
                 Navigator.of(context).pop();
               },
               child: Text(
