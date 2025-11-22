@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'home_view_model.dart';
 import 'note_edit_screen.dart';
+import 'quote_service.dart';
+import 'note.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -9,100 +13,55 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Список заметок
-  List<Map<String, String>> notes = [];
   final TextEditingController _searchController = TextEditingController();
-  List<Map<String, String>> _filteredNotes = [];
-  bool _isSearching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<HomeViewModel>(context, listen: false).loadNotes();
+    });
+  }
 
   void _openNoteEditor(BuildContext context) async {
-    // Получение результата из редактора
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => NoteEditScreen(),
       ),
     );
 
-    // Если возврат с данными - добавление заметки
     if (result != null && result is Map) {
-      setState(() {
-        notes.add({
-          'title': result['title'] ?? 'Без названия',
-          'content': result['content'] ?? '',
-          'preview': _getPreview(result['content'] ?? ''),
-          'date': result['date'] ?? _getCurrentDate(),
-        });
-        // Если активно окно поиска - обновление результатов
-        if (_isSearching) {
-          _performSearch();
-        }
-      });
+      final viewModel = Provider.of<HomeViewModel>(context, listen: false);
+      await viewModel.addNote(
+        result['title'] ?? 'Без названия',
+        result['content'] ?? '',
+        result['date'] ?? _getCurrentDate(),
+      );
     }
   }
 
-  void _openNoteForEditing(BuildContext context, int index) async {
-    final note = _isSearching ? _filteredNotes[index] : notes[index];
-    final originalIndex = notes.indexOf(note);
-    
+  void _openNoteForEditing(BuildContext context, Note note) async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => NoteEditScreen(
-          initialTitle: note['title'],
-          initialContent: note['content'],
+          initialTitle: note.title,
+          initialContent: note.content,
         ),
       ),
     );
 
-    // Обновление заметки если возврат с данными
     if (result != null && result is Map) {
-      setState(() {
-        notes[originalIndex] = {
-          'title': result['title'] ?? 'Без названия',
-          'content': result['content'] ?? '',
-          'preview': _getPreview(result['content'] ?? ''),
-          'date': result['date'] ?? _getCurrentDate(),
-        };
-        // Если активно окно поиска - обновление результатов
-        if (_isSearching) {
-          _performSearch();
-        }
-      });
+      final viewModel = Provider.of<HomeViewModel>(context, listen: false);
+      final updatedNote = Note(
+        id: note.id,
+        title: result['title'] ?? 'Без названия',
+        content: result['content'] ?? '',
+        date: result['date'] ?? _getCurrentDate(),
+      );
+      await viewModel.updateNote(updatedNote);
     }
   }
 
-  // Функция поиска
-  void _performSearch() {
-    final query = _searchController.text.trim();
-    
-    if (query.isEmpty) {
-      setState(() {
-        _isSearching = false;
-        _filteredNotes = [];
-      });
-      return;
-    }
-
-    setState(() {
-      _isSearching = true;
-      _filteredNotes = notes.where((note) {
-        final title = note['title']?.toLowerCase() ?? '';
-        final content = note['content']?.toLowerCase() ?? '';
-        final searchQuery = query.toLowerCase();
-        return title.contains(searchQuery) || content.contains(searchQuery);
-      }).toList();
-    });
-  }
-
-  // Очистка поиска
-  void _clearSearch() {
-    setState(() {
-      _searchController.clear();
-      _isSearching = false;
-      _filteredNotes = [];
-    });
-  }
-
-  // Создание превью (первые 50 символов)
   String _getPreview(String content) {
     if (content.isEmpty) return 'Нет содержимого';
     if (content.length <= 50) return content;
@@ -116,6 +75,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final viewModel = Provider.of<HomeViewModel>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Text('MyNotes'),
@@ -123,6 +84,47 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
+          Container(
+            width: double.infinity,
+            margin: EdgeInsets.all(16),
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[100]!),
+            ),
+            child: FutureBuilder<String>(
+              future: QuoteService().getDailyQuote(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Загружаем вдохновение...',
+                        style: TextStyle(color: Colors.blue[700]),
+                      ),
+                    ],
+                  );
+                }
+                return Text(
+                  snapshot.data ?? 'Начните день с улыбки!',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.blue[800],
+                  ),
+                  textAlign: TextAlign.center,
+                );
+              },
+            ),
+          ),
           // Поисковая строка
           Padding(
             padding: EdgeInsets.all(16.0),
@@ -139,7 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     onSubmitted: (_) {
-                      _performSearch();
+                      viewModel.searchNotes(_searchController.text);
                     },
                   ),
                 ),
@@ -147,7 +149,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Кнопка поиска
                 IconButton(
                   icon: Icon(Icons.search),
-                  onPressed: _performSearch,
+                  onPressed: () {
+                    viewModel.searchNotes(_searchController.text);
+                  },
                   tooltip: 'Найти заметки',
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.blue,
@@ -155,10 +159,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 // Кнопка очистки
-                if (_isSearching)
+                if (viewModel.isSearching)
                   IconButton(
                     icon: Icon(Icons.clear),
-                    onPressed: _clearSearch,
+                    onPressed: () {
+                      _searchController.clear();
+                      viewModel.clearSearch();
+                    },
                     tooltip: 'Очистить поиск',
                   ),
               ],
@@ -166,13 +173,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           
           // Статус поиска
-          if (_isSearching)
+          if (viewModel.isSearching)
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Row(
                 children: [
                   Text(
-                    'Найдено заметок: ${_filteredNotes.length}',
+                    'Найдено заметок: ${viewModel.notes.length}',
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 14,
@@ -180,7 +187,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   Spacer(),
                   TextButton(
-                    onPressed: _clearSearch,
+                    onPressed: () {
+                      _searchController.clear();
+                      viewModel.clearSearch();
+                    },
                     child: Text('Показать все'),
                   ),
                 ],
@@ -189,13 +199,9 @@ class _HomeScreenState extends State<HomeScreen> {
           
           // Список заметок или сообщение о пустоте
           Expanded(
-            child: _isSearching 
-                ? (_filteredNotes.isEmpty 
-                    ? _buildEmptyState(true)
-                    : _buildNotesList(_filteredNotes))
-                : (notes.isEmpty
-                    ? _buildEmptyState(false)
-                    : _buildNotesList(notes)),
+            child: viewModel.notes.isEmpty
+                ? _buildEmptyState(viewModel.isSearching)
+                : _buildNotesList(viewModel.notes, context),
           ),
         ],
       ),
@@ -247,70 +253,59 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildNotesList(List<Map<String, String>> notesList) {
+  Widget _buildNotesList(List<Note> notesList, BuildContext context) {
     return ListView.builder(
       itemCount: notesList.length,
       itemBuilder: (context, index) {
         final note = notesList[index];
         return _buildNoteItem(
+          note: note,
           context: context,
-          title: note['title']!,
-          preview: note['preview']!,
-          date: note['date']!,
-          index: index,
-          isSearching: _isSearching,
         );
       },
     );
   }
 
   Widget _buildNoteItem({
+    required Note note,
     required BuildContext context,
-    required String title,
-    required String preview,
-    required String date,
-    required int index,
-    required bool isSearching,
   }) {
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: ListTile(
         title: Text(
-          title,
+          note.title,
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(height: 4.0),
-            Text(preview),
+            Text(_getPreview(note.content)),
             SizedBox(height: 4.0),
             Text(
-              date,
+              note.date,
               style: TextStyle(fontSize: 12.0, color: Colors.grey),
             ),
           ],
         ),
         onTap: () {
-          _openNoteForEditing(context, index);
+          _openNoteForEditing(context, note);
         },
         onLongPress: () {
-          _showDeleteDialog(context, index, isSearching);
+          _showDeleteDialog(context, note);
         },
       ),
     );
   }
 
-  void _showDeleteDialog(BuildContext context, int index, bool isSearching) {
-    final note = isSearching ? _filteredNotes[index] : notes[index];
-    final originalIndex = notes.indexOf(note);
-    
+  void _showDeleteDialog(BuildContext context, Note note) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Удалить заметку?'),
-          content: Text('Вы точно хотите удалить "${note['title']}"?'),
+          content: Text('Вы точно хотите удалить "${note.title}"?'),
           actions: [
             TextButton(
               onPressed: () {
@@ -319,14 +314,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text('Отмена'),
             ),
             TextButton(
-              onPressed: () {
-                setState(() {
-                  notes.removeAt(originalIndex);
-                  // Если активно окно поиска - обновление результатов
-                  if (isSearching) {
-                    _performSearch();
-                  }
-                });
+              onPressed: () async {
+                final viewModel = Provider.of<HomeViewModel>(context, listen: false);
+                if (note.id != null) {
+                  await viewModel.deleteNote(note.id!);
+                }
                 Navigator.of(context).pop();
               },
               child: Text(
